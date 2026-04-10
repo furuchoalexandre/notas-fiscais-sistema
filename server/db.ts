@@ -1,5 +1,6 @@
-import { and, desc, eq, like, or, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/neon-http";
+import { neon } from "@neondatabase/serverless";
 import {
   InsertNota, InsertNotaStatus, InsertNotaTipo, InsertUserPermission, InsertUser,
   notas, notaStatus, notaTipo, userPermissions, users
@@ -9,9 +10,11 @@ import { ENV } from './_core/env';
 let _db: ReturnType<typeof drizzle> | null = null;
 
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+  const connStr = process.env.NEON_DATABASE_URL;
+  if (!_db && connStr) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      const sql_client = neon(connStr);
+      _db = drizzle(sql_client);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -54,7 +57,11 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   if (!values.lastSignedIn) values.lastSignedIn = new Date();
   if (Object.keys(updateSet).length === 0) updateSet.lastSignedIn = new Date();
 
-  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
+  // PostgreSQL upsert via onConflictDoUpdate
+  await db.insert(users).values(values).onConflictDoUpdate({
+    target: users.openId,
+    set: updateSet,
+  });
 }
 
 export async function getUserByOpenId(openId: string) {
@@ -114,8 +121,8 @@ export async function getStatusById(id: number) {
 export async function createStatus(data: InsertNotaStatus) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(notaStatus).values(data);
-  return result[0].insertId;
+  const result = await db.insert(notaStatus).values(data).returning({ id: notaStatus.id });
+  return result[0].id;
 }
 
 export async function updateStatus(id: number, data: Partial<InsertNotaStatus>) {
@@ -150,8 +157,8 @@ export async function getTipoById(id: number) {
 export async function createTipo(data: InsertNotaTipo) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(notaTipo).values(data);
-  return result[0].insertId;
+  const result = await db.insert(notaTipo).values(data).returning({ id: notaTipo.id });
+  return result[0].id;
 }
 
 export async function updateTipo(id: number, data: Partial<InsertNotaTipo>) {
@@ -189,11 +196,11 @@ export async function getNotas(filter: NotaFilter = {}) {
   if (search) {
     conditions.push(
       or(
-        like(notas.numero, `%${search}%`),
-        like(notas.emitenteNome, `%${search}%`),
-        like(notas.emitenteCnpj, `%${search}%`),
-        like(notas.destinatarioNome, `%${search}%`),
-        like(notas.chaveAcesso, `%${search}%`)
+        ilike(notas.numero, `%${search}%`),
+        ilike(notas.emitenteNome, `%${search}%`),
+        ilike(notas.emitenteCnpj, `%${search}%`),
+        ilike(notas.destinatarioNome, `%${search}%`),
+        ilike(notas.chaveAcesso, `%${search}%`)
       )
     );
   }
@@ -242,16 +249,14 @@ export async function checkDuplicate(
 ): Promise<boolean> {
   const db = await getDb();
   if (!db) return false;
-  const conditions: ReturnType<typeof eq>[] = [
+  const conditions = [
     eq(notas.numero, numero),
     eq(notas.serie, serie),
     eq(notas.emitenteCnpj, emitenteCnpj),
     eq(notas.tipoId, tipoId),
   ];
   const result = await db.select({ id: notas.id }).from(notas).where(and(...conditions)).limit(1);
-  if (excludeId) {
-    return result.length > 0 && result[0].id !== excludeId;
-  }
+  if (excludeId) return result.length > 0 && result[0].id !== excludeId;
   return result.length > 0;
 }
 
@@ -266,14 +271,14 @@ export async function checkDuplicateChave(chaveAcesso: string, excludeId?: numbe
 export async function createNota(data: InsertNota) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(notas).values(data);
-  return result[0].insertId;
+  const result = await db.insert(notas).values(data).returning({ id: notas.id });
+  return result[0].id;
 }
 
 export async function updateNota(id: number, data: Partial<InsertNota>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(notas).set(data).where(eq(notas.id, id));
+  await db.update(notas).set({ ...data, updatedAt: new Date() }).where(eq(notas.id, id));
 }
 
 export async function deleteNota(id: number) {
@@ -286,21 +291,23 @@ export async function getDashboardStats() {
   const db = await getDb();
   if (!db) return null;
 
-  const [totalNotas, totalPorStatus, totalPorTipo, valorTotal] = await Promise.all([
+  const [totalNotas, totalPorStatus, totalPorTipo, valorTotal, totalStatus, totalTipos] = await Promise.all([
     db.select({ count: sql<number>`COUNT(*)` }).from(notas),
     db.select({
       statusId: notas.statusId,
       statusNome: notaStatus.nome,
       statusCor: notaStatus.cor,
       count: sql<number>`COUNT(*)`,
-    }).from(notas).leftJoin(notaStatus, eq(notas.statusId, notaStatus.id)).groupBy(notas.statusId),
+    }).from(notas).leftJoin(notaStatus, eq(notas.statusId, notaStatus.id)).groupBy(notas.statusId, notaStatus.nome, notaStatus.cor),
     db.select({
       tipoId: notas.tipoId,
       tipoCodigo: notaTipo.codigo,
       tipoNome: notaTipo.nome,
       count: sql<number>`COUNT(*)`,
-    }).from(notas).leftJoin(notaTipo, eq(notas.tipoId, notaTipo.id)).groupBy(notas.tipoId),
-    db.select({ total: sql<string>`SUM(valorTotal)` }).from(notas),
+    }).from(notas).leftJoin(notaTipo, eq(notas.tipoId, notaTipo.id)).groupBy(notas.tipoId, notaTipo.codigo, notaTipo.nome),
+    db.select({ total: sql<string>`SUM("valorTotal")` }).from(notas),
+    db.select({ count: sql<number>`COUNT(*)` }).from(notaStatus),
+    db.select({ count: sql<number>`COUNT(*)` }).from(notaTipo),
   ]);
 
   return {
@@ -308,5 +315,7 @@ export async function getDashboardStats() {
     totalPorStatus,
     totalPorTipo,
     valorTotal: Number(valorTotal[0]?.total ?? 0),
+    totalStatus: Number(totalStatus[0]?.count ?? 0),
+    totalTipos: Number(totalTipos[0]?.count ?? 0),
   };
 }

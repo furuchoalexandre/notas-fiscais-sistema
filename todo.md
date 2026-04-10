@@ -35,3 +35,7 @@
 ## Melhorias
 - [x] Tornar status opcional na importação de XML (importar NF sem status)
 - [x] Tornar status opcional no cadastro manual de notas (frontend e backend)
+- [x] Migrar de MySQL para PostgreSQL (Neon) — instalar pg/neon driver
+- [x] Migrar schema Drizzle para PostgreSQL
+- [x] Migrar db.ts e routers.ts para PostgreSQL
+- [x] Configurar NEON_DATABASE_URL e rodar migrações (5 tabelas criadas)
