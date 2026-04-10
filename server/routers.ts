@@ -243,7 +243,7 @@ export const appRouter = router({
         numero: z.string().min(1),
         serie: z.string().default("1"),
         tipoId: z.number(),
-        statusId: z.number(),
+        statusId: z.number().optional(),
         emitenteCnpj: z.string().min(1),
         emitenteNome: z.string().min(1),
         emitenteUf: z.string().optional(),

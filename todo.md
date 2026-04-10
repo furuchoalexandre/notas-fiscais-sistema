@@ -34,3 +34,4 @@
 
 ## Melhorias
 - [x] Tornar status opcional na importação de XML (importar NF sem status)
+- [x] Tornar status opcional no cadastro manual de notas (frontend e backend)

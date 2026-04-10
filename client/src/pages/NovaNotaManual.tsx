@@ -50,14 +50,14 @@ export default function NovaNotaManual() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.numero || !form.tipoId || !form.statusId || !form.emitenteCnpj || !form.emitenteNome || !form.valorTotal || !form.dataEmissao) {
+    if (!form.numero || !form.tipoId || !form.emitenteCnpj || !form.emitenteNome || !form.valorTotal || !form.dataEmissao) {
       toast.error("Preencha todos os campos obrigatórios.");
       return;
     }
     createMutation.mutate({
       ...form,
       tipoId: Number(form.tipoId),
-      statusId: Number(form.statusId),
+      statusId: form.statusId !== "" ? Number(form.statusId) : undefined,
     });
   };
 
@@ -118,11 +118,11 @@ export default function NovaNotaManual() {
               </select>
             </div>
             <div>
-              <label className="form-label">Status *</label>
+              <label className="form-label">Status <span className="text-xs font-normal" style={{ color: "var(--muted-foreground)" }}>(opcional)</span></label>
               <select value={form.statusId} onChange={e => set("statusId", e.target.value)}
                 className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none"
                 style={{ borderColor: "var(--border)", background: "var(--background)" }}>
-                <option value="">Selecione...</option>
+                <option value="">Sem status (definir depois)</option>
                 {statusList?.filter(s => s.ativo).map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
               </select>
             </div>
