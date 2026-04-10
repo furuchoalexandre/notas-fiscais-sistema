@@ -75,7 +75,7 @@ export const notas = mysqlTable("notas", {
   numero: varchar("numero", { length: 20 }).notNull(),
   serie: varchar("serie", { length: 10 }).default("1").notNull(),
   tipoId: int("tipoId").notNull().references(() => notaTipo.id),
-  statusId: int("statusId").notNull().references(() => notaStatus.id),
+  statusId: int("statusId").references(() => notaStatus.id),
   emitenteCnpj: varchar("emitenteCnpj", { length: 18 }).notNull(),
   emitenteNome: varchar("emitenteNome", { length: 200 }).notNull(),
   emitenteUf: varchar("emitenteUf", { length: 2 }),

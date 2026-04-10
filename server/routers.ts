@@ -314,7 +314,7 @@ export const appRouter = router({
       .input(z.object({
         xmlContent: z.string(),
         fileName: z.string(),
-        statusId: z.number(),
+        statusId: z.number().optional(),
       })).mutation(async ({ input, ctx }) => {
         let parsed: ReturnType<typeof parseXmlNota>;
         try {
@@ -357,7 +357,7 @@ export const appRouter = router({
           numero: parsed.numero,
           serie: parsed.serie,
           tipoId: tipo.id,
-          statusId: input.statusId,
+          statusId: input.statusId ?? undefined,
           emitenteCnpj: parsed.emitenteCnpj,
           emitenteNome: parsed.emitenteNome,
           emitenteUf: parsed.emitenteUf ?? undefined,

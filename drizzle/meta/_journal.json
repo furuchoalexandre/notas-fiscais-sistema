@@ -15,6 +15,13 @@
       "when": 1775831849161,
       "tag": "0001_mean_romulus",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1775837385909,
+      "tag": "0002_salty_odin",
+      "breakpoints": true
     }
   ]
 }

@@ -86,8 +86,11 @@ export default function ImportarXml() {
 
   const handleSubmit = () => {
     if (!xmlContent) { toast.error("Selecione um arquivo XML."); return; }
-    if (!statusId) { toast.error("Selecione um status para a nota."); return; }
-    importMutation.mutate({ xmlContent, fileName, statusId: Number(statusId) });
+    importMutation.mutate({
+      xmlContent,
+      fileName,
+      statusId: statusId !== "" ? Number(statusId) : undefined,
+    });
   };
 
   return (
@@ -214,24 +217,21 @@ export default function ImportarXml() {
 
         {/* Status */}
         <div className="bg-white rounded-xl border p-5 mb-4" style={{ borderColor: "var(--border)" }}>
-          <label className="form-label">Status da Nota *</label>
+          <label className="form-label">Status da Nota <span className="text-xs font-normal" style={{ color: "var(--muted-foreground)" }}>(opcional)</span></label>
           <select
             value={statusId}
             onChange={(e) => setStatusId(e.target.value ? Number(e.target.value) : "")}
             className="w-full px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2"
             style={{ borderColor: "var(--border)", background: "var(--background)", color: "var(--foreground)" }}
           >
-            <option value="">Selecione um status...</option>
+            <option value="">Sem status (definir depois)</option>
             {statusList?.map(s => (
               <option key={s.id} value={s.id}>{s.nome}</option>
             ))}
           </select>
-          {statusList?.length === 0 && (
-            <p className="text-xs mt-2" style={{ color: "var(--destructive)" }}>
-              Nenhum status cadastrado.{" "}
-              <Link href="/configuracoes/status" className="underline">Cadastre um status primeiro.</Link>
-            </p>
-          )}
+          <p className="text-xs mt-1.5" style={{ color: "var(--muted-foreground)" }}>
+            Você pode definir o status agora ou atribuí-lo depois na listagem de notas.
+          </p>
         </div>
 
         {/* Aviso duplicata */}
@@ -250,7 +250,7 @@ export default function ImportarXml() {
           </Link>
           <button
             onClick={handleSubmit}
-            disabled={!xmlContent || !statusId || importMutation.isPending}
+            disabled={!xmlContent || importMutation.isPending}
             className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ background: "var(--primary)" }}
           >

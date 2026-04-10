@@ -31,3 +31,6 @@
 - [x] Teste de detecção de duplicata
 - [x] Teste de parser XML NF-e
 - [x] Testes Vitest (8 testes passando)
+
+## Melhorias
+- [x] Tornar status opcional na importação de XML (importar NF sem status)

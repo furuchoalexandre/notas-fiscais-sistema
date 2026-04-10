@@ -1,0 +1,1 @@
+ALTER TABLE `notas` MODIFY COLUMN `statusId` int;
