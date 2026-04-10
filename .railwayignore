@@ -1,0 +1,4 @@
+.manus-logs/
+screenshots/
+*.test.ts
+.env*

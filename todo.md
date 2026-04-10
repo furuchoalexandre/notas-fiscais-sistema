@@ -39,3 +39,6 @@
 - [x] Migrar schema Drizzle para PostgreSQL
 - [x] Migrar db.ts e routers.ts para PostgreSQL
 - [x] Configurar NEON_DATABASE_URL e rodar migrações (5 tabelas criadas)
+- [ ] Preparar Dockerfile e configurações para Railway
+- [ ] Criar repositório GitHub privado e fazer push
+- [ ] Configurar variáveis de ambiente no Railway
