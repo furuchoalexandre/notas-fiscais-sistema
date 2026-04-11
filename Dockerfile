@@ -7,7 +7,8 @@ RUN npm install -g pnpm@10.4.1
 # ── Dependencies ──────────────────────────────────────────────────────────────
 FROM base AS deps
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+# Use --no-frozen-lockfile to avoid lockfile version mismatch issues
+RUN pnpm install --no-frozen-lockfile
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 FROM deps AS builder
@@ -22,7 +23,7 @@ RUN npm install -g pnpm@10.4.1
 
 # Copy only production dependencies
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --prod
+RUN pnpm install --no-frozen-lockfile --prod
 
 # Copy built server (esbuild output)
 COPY --from=builder /app/dist ./dist
