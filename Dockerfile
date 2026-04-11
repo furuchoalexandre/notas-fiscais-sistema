@@ -6,9 +6,10 @@ RUN npm install -g pnpm@10.4.1
 
 # ── Dependencies ──────────────────────────────────────────────────────────────
 FROM base AS deps
+# Copy package files AND patches directory (required by pnpm patched dependencies)
 COPY package.json pnpm-lock.yaml ./
-# Use --no-frozen-lockfile to avoid lockfile version mismatch issues
-RUN pnpm install --no-frozen-lockfile
+COPY patches ./patches
+RUN pnpm install --frozen-lockfile
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 FROM deps AS builder
@@ -21,9 +22,10 @@ WORKDIR /app
 
 RUN npm install -g pnpm@10.4.1
 
-# Copy only production dependencies
+# Copy package files AND patches directory
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --no-frozen-lockfile --prod
+COPY patches ./patches
+RUN pnpm install --frozen-lockfile --prod
 
 # Copy built server (esbuild output)
 COPY --from=builder /app/dist ./dist
