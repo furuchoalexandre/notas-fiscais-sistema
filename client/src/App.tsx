@@ -11,13 +11,16 @@ import GerenciarStatus from "./pages/GerenciarStatus";
 import GerenciarTipos from "./pages/GerenciarTipos";
 import GerenciarUsuarios from "./pages/GerenciarUsuarios";
 import Login from "./pages/Login";
+import Setup from "./pages/Setup";
 import NotFound from "./pages/NotFound";
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
+      <Route path="/dashboard" component={Dashboard} />
       <Route path="/login" component={Login} />
+      <Route path="/setup" component={Setup} />
       <Route path="/notas" component={Notas} />
       <Route path="/notas/importar" component={ImportarXml} />
       <Route path="/notas/nova" component={NovaNotaManual} />

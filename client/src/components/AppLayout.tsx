@@ -1,12 +1,10 @@
-import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl } from "@/const";
 import { trpc } from "@/lib/trpc";
 import {
   BarChart3, FileText, FileUp, FilePlus, Settings,
   Tag, Layers, Users, LogOut, Menu, X, ChevronRight,
-  FileCheck
+  FileCheck, Loader2
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 
 interface NavItem {
@@ -48,28 +46,44 @@ interface AppLayoutProps {
 }
 
 export default function AppLayout({ children, title }: AppLayoutProps) {
-  const { user, isAuthenticated, loading, logout } = useAuth();
-  const { data: perms } = trpc.auth.myPermissions.useQuery(undefined, { enabled: isAuthenticated });
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const utils = trpc.useUtils();
 
-  if (loading) {
+  // Usar sessão local
+  const { data: user, isLoading: loadingUser } = trpc.auth.meLocal.useQuery();
+  const { data: perms } = trpc.auth.myPermissions.useQuery(undefined, {
+    enabled: !!user && user.role !== 'admin',
+  });
+
+  const logoutMutation = trpc.auth.logout.useMutation({
+    onSuccess: async () => {
+      await utils.auth.meLocal.invalidate();
+      setLocation("/login");
+    },
+  });
+
+  // Redirecionar para login se não autenticado
+  useEffect(() => {
+    if (!loadingUser && !user) {
+      setLocation("/login");
+    }
+  }, [user, loadingUser, setLocation]);
+
+  if (loadingUser) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--background)" }}>
         <div className="text-center">
-          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-3" style={{ borderColor: "var(--primary)", borderTopColor: "transparent" }} />
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-3" style={{ color: "var(--primary)" }} />
           <p style={{ color: "var(--muted-foreground)", fontSize: "0.875rem" }}>Carregando...</p>
         </div>
       </div>
     );
   }
 
-  if (!isAuthenticated) {
-    window.location.href = getLoginUrl();
-    return null;
-  }
+  if (!user) return null;
 
-  const isAdmin = user?.role === "admin";
+  const isAdmin = user.role === "admin";
 
   const canSeeItem = (item: NavItem) => {
     if (item.adminOnly) return isAdmin;
@@ -150,9 +164,13 @@ export default function AppLayout({ children, title }: AppLayoutProps) {
 
       {/* Logout */}
       <div className="px-2 py-3 border-t" style={{ borderColor: "var(--sidebar-border)" }}>
-        <button className="sidebar-nav-item w-full" onClick={() => logout()}>
+        <button
+          className="sidebar-nav-item w-full"
+          onClick={() => logoutMutation.mutate()}
+          disabled={logoutMutation.isPending}
+        >
           <LogOut className="w-4 h-4 flex-shrink-0" />
-          <span>Sair</span>
+          <span>{logoutMutation.isPending ? "Saindo..." : "Sair"}</span>
         </button>
       </div>
     </>

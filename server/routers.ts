@@ -10,7 +10,10 @@ import {
   getAllTipos, createTipo, updateTipo, deleteTipo,
   getNotas, getNotaById, createNota, updateNota, deleteNota,
   checkDuplicate, checkDuplicateChave, getDashboardStats,
+  getUserByEmail, createLocalUser, countAdmins, getUserById,
 } from "./db";
+import bcrypt from "bcryptjs";
+import { SignJWT, jwtVerify } from "jose";
 import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 
@@ -109,11 +112,86 @@ export const appRouter = router({
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      ctx.res.clearCookie('local_session', { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
     myPermissions: protectedProcedure.query(async ({ ctx }) => {
       if (ctx.user.role === "admin") return null;
       return getUserPermissions(ctx.user.id);
+    }),
+
+    // ── Login local (e-mail + senha) ──────────────────────────────────────────
+    login: publicProcedure
+      .input(z.object({ email: z.string().email(), password: z.string().min(1) }))
+      .mutation(async ({ input, ctx }) => {
+        const user = await getUserByEmail(input.email);
+        if (!user || !user.passwordHash) {
+          throw new TRPCError({ code: 'UNAUTHORIZED', message: 'E-mail ou senha inválidos.' });
+        }
+        const valid = await bcrypt.compare(input.password, user.passwordHash);
+        if (!valid) {
+          throw new TRPCError({ code: 'UNAUTHORIZED', message: 'E-mail ou senha inválidos.' });
+        }
+        // Gerar JWT
+        const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'notas-secret-key-2024');
+        const token = await new SignJWT({ userId: user.id, role: user.role })
+          .setProtectedHeader({ alg: 'HS256' })
+          .setExpirationTime('7d')
+          .sign(secret);
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie('local_session', token, { ...cookieOptions, maxAge: 7 * 24 * 60 * 60 * 1000 });
+        return { success: true, user: { id: user.id, name: user.name, email: user.email, role: user.role } };
+      }),
+
+    // ── Verificar sessão local ────────────────────────────────────────────────
+    meLocal: publicProcedure.query(async ({ ctx }) => {
+      const token = ctx.req.cookies?.local_session;
+      if (!token) return null;
+      try {
+        const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'notas-secret-key-2024');
+        const { payload } = await jwtVerify(token, secret);
+        const userId = payload.userId as number;
+        const user = await getUserById(userId);
+        if (!user) return null;
+        return { id: user.id, name: user.name, email: user.email, role: user.role, openId: user.openId };
+      } catch {
+        return null;
+      }
+    }),
+
+    // ── Setup inicial: criar primeiro admin ───────────────────────────────────
+    setup: publicProcedure
+      .input(z.object({ name: z.string().min(1), email: z.string().email(), password: z.string().min(6) }))
+      .mutation(async ({ input }) => {
+        const admins = await countAdmins();
+        if (admins > 0) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Setup já realizado. Contate um administrador.' });
+        }
+        const existing = await getUserByEmail(input.email);
+        if (existing) {
+          throw new TRPCError({ code: 'CONFLICT', message: 'E-mail já cadastrado.' });
+        }
+        const passwordHash = await bcrypt.hash(input.password, 10);
+        const user = await createLocalUser(input.name, input.email, passwordHash, 'admin');
+        return { success: true, userId: user?.id };
+      }),
+
+    // ── Criar usuário (admin only) ────────────────────────────────────────────
+    createUser: protectedProcedure
+      .input(z.object({ name: z.string().min(1), email: z.string().email(), password: z.string().min(6), role: z.enum(['user', 'admin']).default('user') }))
+      .mutation(async ({ input, ctx }) => {
+        if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN' });
+        const existing = await getUserByEmail(input.email);
+        if (existing) throw new TRPCError({ code: 'CONFLICT', message: 'E-mail já cadastrado.' });
+        const passwordHash = await bcrypt.hash(input.password, 10);
+        const user = await createLocalUser(input.name, input.email, passwordHash, input.role);
+        return { success: true, userId: user?.id };
+      }),
+
+    // ── Verificar se setup foi feito ──────────────────────────────────────────
+    needsSetup: publicProcedure.query(async () => {
+      const admins = await countAdmins();
+      return admins === 0;
     }),
   }),
 

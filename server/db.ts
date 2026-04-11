@@ -64,6 +64,49 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   });
 }
 
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function createLocalUser(name: string, email: string, passwordHash: string, role: 'user' | 'admin' = 'user') {
+  const db = await getDb();
+  if (!db) throw new Error('DB not available');
+  const openId = `local_${email}`;
+  const result = await db.insert(users).values({
+    openId,
+    name,
+    email,
+    passwordHash,
+    loginMethod: 'local',
+    role,
+    lastSignedIn: new Date(),
+  }).returning();
+  return result[0];
+}
+
+export async function updateUserPassword(userId: number, passwordHash: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+}
+
+export async function countAdmins() {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.select().from(users).where(eq(users.role, 'admin'));
+  return result.length;
+}
+
 export async function getUserByOpenId(openId: string) {
   const db = await getDb();
   if (!db) return undefined;

@@ -1,7 +1,7 @@
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
-import { Shield, ShieldCheck, Settings, Check, X } from "lucide-react";
+import { Shield, ShieldCheck, Settings, Check, X, UserPlus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 const PERMISSIONS = [
@@ -22,6 +22,21 @@ export default function GerenciarUsuarios() {
   const { data: usuarios, refetch } = trpc.usuarios.list.useQuery();
   const [editUserId, setEditUserId] = useState<number | null>(null);
   const [permsForm, setPermsForm] = useState<Record<string, boolean>>(DEFAULT_PERMS);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newRole, setNewRole] = useState<"user" | "admin">("user");
+
+  const createUserMut = trpc.auth.createUser.useMutation({
+    onSuccess: () => {
+      toast.success("Usuário criado com sucesso!");
+      setShowCreateModal(false);
+      setNewName(""); setNewEmail(""); setNewPassword(""); setNewRole("user");
+      refetch();
+    },
+    onError: e => toast.error(e.message),
+  });
 
   const { data: userPerms } = trpc.usuarios.getPermissions.useQuery(
     { userId: editUserId! },
@@ -77,7 +92,67 @@ export default function GerenciarUsuarios() {
             Controle de acesso e permissões por usuário
           </p>
         </div>
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
+          style={{ background: "var(--primary)" }}
+        >
+          <UserPlus className="w-4 h-4" /> Novo Usuário
+        </button>
       </div>
+
+      {/* Modal Criar Usuário */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl border shadow-xl p-6 w-full max-w-md mx-4" style={{ borderColor: "var(--border)" }}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold" style={{ color: "var(--foreground)" }}>Novo Usuário</h3>
+              <button onClick={() => setShowCreateModal(false)} className="p-1 rounded hover:bg-gray-100">
+                <X className="w-4 h-4" style={{ color: "var(--muted-foreground)" }} />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium block mb-1" style={{ color: "var(--foreground)" }}>Nome</label>
+                <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Nome completo"
+                  className="w-full px-3 py-2 rounded-lg border text-sm" style={{ borderColor: "var(--border)" }} />
+              </div>
+              <div>
+                <label className="text-xs font-medium block mb-1" style={{ color: "var(--foreground)" }}>E-mail</label>
+                <input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="email@empresa.com"
+                  className="w-full px-3 py-2 rounded-lg border text-sm" style={{ borderColor: "var(--border)" }} />
+              </div>
+              <div>
+                <label className="text-xs font-medium block mb-1" style={{ color: "var(--foreground)" }}>Senha (mín. 6 caracteres)</label>
+                <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="••••••"
+                  className="w-full px-3 py-2 rounded-lg border text-sm" style={{ borderColor: "var(--border)" }} />
+              </div>
+              <div>
+                <label className="text-xs font-medium block mb-1" style={{ color: "var(--foreground)" }}>Perfil</label>
+                <select value={newRole} onChange={e => setNewRole(e.target.value as "user" | "admin")}
+                  className="w-full px-3 py-2 rounded-lg border text-sm" style={{ borderColor: "var(--border)" }}>
+                  <option value="user">Usuário</option>
+                  <option value="admin">Administrador</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => createUserMut.mutate({ name: newName, email: newEmail, password: newPassword, role: newRole })}
+                disabled={createUserMut.isPending || !newName || !newEmail || newPassword.length < 6}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+                style={{ background: "var(--primary)" }}
+              >
+                {createUserMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                Criar Usuário
+              </button>
+              <button onClick={() => setShowCreateModal(false)} className="px-3 py-2 rounded-lg text-sm border hover:bg-gray-50" style={{ borderColor: "var(--border)" }}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-4xl">
         {/* Painel de permissões */}
