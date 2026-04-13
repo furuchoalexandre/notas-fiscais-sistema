@@ -145,7 +145,18 @@ export const appRouter = router({
 
     // ── Verificar sessão local ────────────────────────────────────────────────
     meLocal: publicProcedure.query(async ({ ctx }) => {
-      const token = ctx.req.cookies?.local_session;
+      // Usar parseCookies pois cookie-parser não está configurado no Express
+      function parseCookies(cookieHeader: string | undefined): Record<string, string> {
+        if (!cookieHeader) return {};
+        return Object.fromEntries(
+          cookieHeader.split(";").map(c => {
+            const [k, ...v] = c.trim().split("=");
+            return [k.trim(), decodeURIComponent(v.join("="))];
+          })
+        );
+      }
+      const cookies = parseCookies(ctx.req.headers.cookie);
+      const token = cookies["local_session"];
       if (!token) return null;
       try {
         const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'notas-secret-key-2024');
