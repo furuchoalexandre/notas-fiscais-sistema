@@ -38,9 +38,13 @@ function parseXmlNota(xmlContent: string) {
     return m ? m[1].trim() : null;
   };
 
-  const isNFe = /<nfeProc|<NFe/.test(xmlContent);
-  const isCTe = /<cteProc|<CTe/.test(xmlContent);
-  const isNFSe = /<CompNfse|<Nfse|<nfse/.test(xmlContent);
+  // Detectar tipo: NF-e, CT-e ou NFS-e (suporta padrão antigo e novo SPED)
+  // NF-e: nfeProc, NFe
+  const isNFe = /<nfeProc[\s>]|<NFe[\s>]/.test(xmlContent);
+  // CT-e: cteProc, CTe
+  const isCTe = /<cteProc[\s>]|<CTe[\s>]/.test(xmlContent);
+  // NFS-e: padrão antigo (CompNfse, Nfse, nfse) e novo padrão SPED (NFSe, infNFSe, nNFSe)
+  const isNFSe = /<CompNfse[\s>]|<Nfse[\s>]|<nfse[\s>]|<NFSe[\s>]|<infNFSe[\s>]|<nNFSe[\s>]/.test(xmlContent);
 
   if (isNFe) {
     const chNFe = get('chNFe') || getAttr('infNFe', 'Id')?.replace('NFe', '') || null;
@@ -83,21 +87,69 @@ function parseXmlNota(xmlContent: string) {
   }
 
   if (isNFSe) {
+    // Novo padrão SPED/Nacional (NFSe com xmlns sped.fazenda.gov.br/nfse)
+    const isNFSeNacional = /<NFSe[\s>]|<infNFSe[\s>]/.test(xmlContent);
+
+    // Chave de acesso: Id do infNFSe
+    const chaveNFSe = isNFSeNacional
+      ? (getAttr('infNFSe', 'Id') || null)
+      : null;
+
+    // Número da nota
+    const numeroNota = isNFSeNacional
+      ? (get('nNFSe') || get('nDFSe') || get('nDPS'))
+      : (get('Numero') || get('NumeroNfse') || get('numero'));
+
+    // Data de emissão
+    const dataEmissaoStr = isNFSeNacional
+      ? (get('dhProc') || get('dhEmi') || get('dCompet'))
+      : (get('Competencia') || get('DataEmissao'));
+
+    // Valor total
+    const valorTotalStr = isNFSeNacional
+      ? (get('vLiq') || get('vServ') || get('vCalcDR'))
+      : (get('ValorServicos') || get('ValorLiquidoNfse'));
+
+    // Emitente (prestador)
+    const emitenteCnpj = isNFSeNacional
+      ? (xmlContent.match(/<emit>[\s\S]*?<CNPJ>([^<]*)<\/CNPJ>/i)?.[1] ||
+         xmlContent.match(/<prest>[\s\S]*?<CNPJ>([^<]*)<\/CNPJ>/i)?.[1] || null)
+      : (xmlContent.match(/<Prestador[\s\S]*?<Cnpj>([^<]*)<\/Cnpj>/i)?.[1] ||
+         xmlContent.match(/<PrestadorServico[\s\S]*?<Cnpj>([^<]*)<\/Cnpj>/i)?.[1] || null);
+
+    const emitenteNome = isNFSeNacional
+      ? (xmlContent.match(/<emit>[\s\S]*?<xNome>([^<]*)<\/xNome>/i)?.[1] || null)
+      : (xmlContent.match(/<RazaoSocial>([^<]*)<\/RazaoSocial>/i)?.[1] || null);
+
+    const emitenteUf = isNFSeNacional
+      ? (xmlContent.match(/<emit>[\s\S]*?<UF>([^<]*)<\/UF>/i)?.[1] || null)
+      : null;
+
+    // Destinatário (tomador)
+    const destinatarioCnpjCpf = isNFSeNacional
+      ? (xmlContent.match(/<toma>[\s\S]*?<CNPJ>([^<]*)<\/CNPJ>/i)?.[1] ||
+         xmlContent.match(/<toma>[\s\S]*?<CPF>([^<]*)<\/CPF>/i)?.[1] || null)
+      : (xmlContent.match(/<Tomador[\s\S]*?<Cnpj>([^<]*)<\/Cnpj>/i)?.[1] || null);
+
+    const destinatarioNome = isNFSeNacional
+      ? (xmlContent.match(/<toma>[\s\S]*?<xNome>([^<]*)<\/xNome>/i)?.[1] || null)
+      : (xmlContent.match(/<Tomador[\s\S]*?<RazaoSocial>([^<]*)<\/RazaoSocial>/i)?.[1] || null);
+
     return {
       tipo: 'NFS-e',
-      chaveAcesso: null,
-      numero: get('Numero') || get('NumeroNfse') || get('numero'),
-      serie: '1',
-      dataEmissao: (() => { const d = get('Competencia') || get('DataEmissao'); return d ? new Date(d) : null; })(),
+      chaveAcesso: chaveNFSe,
+      numero: numeroNota,
+      serie: get('serie') || '1',
+      dataEmissao: (() => { return dataEmissaoStr ? new Date(dataEmissaoStr) : null; })(),
       dataEntradaSaida: null,
-      valorTotal: (() => { const v = get('ValorServicos') || get('ValorLiquidoNfse'); return v ? parseFloat(v) : null; })(),
-      valorDesconto: 0,
-      valorImpostos: 0,
-      emitenteCnpj: xmlContent.match(/<Prestador[\s\S]*?<Cnpj>([^<]*)<\/Cnpj>/i)?.[1] || xmlContent.match(/<PrestadorServico[\s\S]*?<Cnpj>([^<]*)<\/Cnpj>/i)?.[1] || null,
-      emitenteNome: xmlContent.match(/<RazaoSocial>([^<]*)<\/RazaoSocial>/i)?.[1] || null,
-      emitenteUf: null,
-      destinatarioCnpjCpf: xmlContent.match(/<Tomador[\s\S]*?<Cnpj>([^<]*)<\/Cnpj>/i)?.[1] || null,
-      destinatarioNome: xmlContent.match(/<Tomador[\s\S]*?<RazaoSocial>([^<]*)<\/RazaoSocial>/i)?.[1] || null,
+      valorTotal: (() => { return valorTotalStr ? parseFloat(valorTotalStr) : null; })(),
+      valorDesconto: (() => { const v = isNFSeNacional ? get('vDR') : null; return v ? parseFloat(v) : 0; })(),
+      valorImpostos: (() => { const v = isNFSeNacional ? get('vISSQN') : null; return v ? parseFloat(v) : 0; })(),
+      emitenteCnpj,
+      emitenteNome,
+      emitenteUf,
+      destinatarioCnpjCpf,
+      destinatarioNome,
     };
   }
 
