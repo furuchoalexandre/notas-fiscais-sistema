@@ -6,6 +6,7 @@ import {
 // ─── ENUMS ───────────────────────────────────────────────────────────────────
 export const roleEnum = pgEnum("role", ["user", "admin"]);
 export const origemEnum = pgEnum("origem", ["xml", "manual"]);
+export const formaPagamentoEnum = pgEnum("forma_pagamento", ["boleto", "ted", "avista"]);
 
 // ─── USUÁRIOS ────────────────────────────────────────────────────────────────
 export const users = pgTable("users", {
@@ -96,6 +97,18 @@ export const notas = pgTable("notas", {
   xmlNomeArquivo: varchar("xmlNomeArquivo", { length: 255 }),
   dadosExtras: json("dadosExtras"),
   observacoes: text("observacoes"),
+  // ─── Campos de gestão ──────────────────────────────────────────────────────
+  numeroContrato: varchar("numeroContrato", { length: 100 }),
+  numeroPedido: varchar("numeroPedido", { length: 100 }),
+  dataPedido: timestamp("dataPedido"),
+  numeroOC: varchar("numeroOC", { length: 100 }),
+  dataOC: timestamp("dataOC"),
+  dataTriagem: timestamp("dataTriagem"),
+  dataVencimento: timestamp("dataVencimento"),
+  formaPagamento: formaPagamentoEnum("formaPagamento"),
+  // Array de datas ISO string para parcelas (boleto ou TED)
+  parcelas: json("parcelas").$type<string[]>(),
+  // ───────────────────────────────────────────────────────────────────────────
   createdBy: integer("createdBy").references(() => users.id),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),

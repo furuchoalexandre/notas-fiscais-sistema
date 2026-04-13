@@ -1,22 +1,25 @@
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
-import { useState, useEffect } from "react";
-import { useLocation, Link } from "wouter";
+import { useState } from "react";
+import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import {
-  ArrowLeft, FileText, Edit3, Save, X, Download,
-  Building2, User, Calendar, Hash, DollarSign, FileCheck,
-  MapPin, Tag, Clock, Info, ExternalLink
+  ArrowLeft, Edit3, ExternalLink, Trash2, X, Plus, Minus
 } from "lucide-react";
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 function fmtMoeda(v: string | number | null | undefined) {
   if (v === null || v === undefined) return "—";
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(v));
 }
-function fmtData(d: Date | null | undefined) {
+function fmtData(d: Date | string | null | undefined) {
   if (!d) return "—";
   return new Date(d).toLocaleString("pt-BR");
+}
+function fmtDataCurta(d: Date | string | null | undefined) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("pt-BR");
 }
 function fmtCnpj(v: string | null | undefined) {
   if (!v) return "—";
@@ -25,14 +28,274 @@ function fmtCnpj(v: string | null | undefined) {
   if (n.length === 11) return n.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, "$1.$2.$3-$4");
   return v;
 }
+function toInputDate(d: Date | string | null | undefined): string {
+  if (!d) return "";
+  const dt = new Date(d);
+  if (isNaN(dt.getTime())) return "";
+  return dt.toISOString().slice(0, 10);
+}
+function labelFormaPagamento(f: string | null | undefined) {
+  if (f === "boleto") return "Boleto";
+  if (f === "ted") return "TED";
+  if (f === "avista") return "À Vista";
+  return "—";
+}
 
+// ─── Campo de detalhe ─────────────────────────────────────────────────────────
+function Campo({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--muted-foreground)" }}>
+        {label}
+      </span>
+      <span className="text-sm" style={{ color: "var(--foreground)" }}>{value || "—"}</span>
+    </div>
+  );
+}
+
+// ─── Modal de Edição ─────────────────────────────────────────────────────────
+interface EditModalProps {
+  nota: Record<string, unknown>;
+  statusList: Array<{ id: number; nome: string; cor: string }>;
+  onClose: () => void;
+  onSaved: () => void;
+  notaId: number;
+}
+
+function EditModal({ nota, statusList, onClose, onSaved, notaId }: EditModalProps) {
+  const [statusId, setStatusId] = useState<string>(nota.statusId ? String(nota.statusId) : "");
+  const [observacoes, setObservacoes] = useState<string>((nota.observacoes as string) || "");
+  const [dataEntradaSaida, setDataEntradaSaida] = useState<string>(toInputDate(nota.dataEntradaSaida as Date));
+  const [numeroContrato, setNumeroContrato] = useState<string>((nota.numeroContrato as string) || "");
+  const [numeroPedido, setNumeroPedido] = useState<string>((nota.numeroPedido as string) || "");
+  const [dataPedido, setDataPedido] = useState<string>(toInputDate(nota.dataPedido as Date));
+  const [numeroOC, setNumeroOC] = useState<string>((nota.numeroOC as string) || "");
+  const [dataOC, setDataOC] = useState<string>(toInputDate(nota.dataOC as Date));
+  const [dataTriagem, setDataTriagem] = useState<string>(toInputDate(nota.dataTriagem as Date));
+  const [dataVencimento, setDataVencimento] = useState<string>(toInputDate(nota.dataVencimento as Date));
+  const [formaPagamento, setFormaPagamento] = useState<string>((nota.formaPagamento as string) || "");
+  const [numParcelas, setNumParcelas] = useState<number>(() => {
+    const p = nota.parcelas as string[] | null;
+    return p && p.length > 0 ? p.length : 1;
+  });
+  const [parcelas, setParcelas] = useState<string[]>(() => {
+    const p = nota.parcelas as string[] | null;
+    if (p && p.length > 0) return p.map(d => toInputDate(d));
+    return [""];
+  });
+
+  const updateMutation = trpc.notas.update.useMutation({
+    onSuccess: () => {
+      toast.success("Nota atualizada com sucesso!");
+      onSaved();
+      onClose();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const handleParcelaChange = (idx: number, val: string) => {
+    setParcelas(prev => prev.map((p, i) => i === idx ? val : p));
+  };
+
+  const handleNumParcelasChange = (n: number) => {
+    const clamped = Math.max(1, Math.min(48, n));
+    setNumParcelas(clamped);
+    setParcelas(prev => {
+      const arr = [...prev];
+      while (arr.length < clamped) arr.push("");
+      return arr.slice(0, clamped);
+    });
+  };
+
+  const handleSave = () => {
+    const parcelasValidas = (formaPagamento === "boleto" || formaPagamento === "ted")
+      ? parcelas.filter(Boolean).map(d => new Date(d).toISOString())
+      : null;
+
+    updateMutation.mutate({
+      id: notaId,
+      statusId: statusId ? Number(statusId) : null,
+      observacoes: observacoes || null,
+      dataEntradaSaida: dataEntradaSaida || null,
+      numeroContrato: numeroContrato || null,
+      numeroPedido: numeroPedido || null,
+      dataPedido: dataPedido || null,
+      numeroOC: numeroOC || null,
+      dataOC: dataOC || null,
+      dataTriagem: dataTriagem || null,
+      dataVencimento: dataVencimento || null,
+      formaPagamento: (formaPagamento as "boleto" | "ted" | "avista") || null,
+      parcelas: parcelasValidas,
+    });
+  };
+
+  const showParcelas = formaPagamento === "boleto" || formaPagamento === "ted";
+
+  const inputClass = "w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <div className="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-gray-700 sticky top-0 bg-gray-900 z-10">
+          <h2 className="text-lg font-bold text-white">Editar Nota</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-5 space-y-6">
+
+          {/* Status */}
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-blue-400 mb-3">Status</h3>
+            <select
+              value={statusId}
+              onChange={e => setStatusId(e.target.value)}
+              className={inputClass}
+            >
+              <option value="">— Sem status —</option>
+              {statusList.map(s => (
+                <option key={s.id} value={s.id}>{s.nome}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Gestão */}
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-blue-400 mb-3">Gestão</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Número do Contrato</label>
+                <input type="text" value={numeroContrato} onChange={e => setNumeroContrato(e.target.value)}
+                  placeholder="Ex: CONT-2024-001" className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Data de Entrada / Saída</label>
+                <input type="date" value={dataEntradaSaida} onChange={e => setDataEntradaSaida(e.target.value)} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Número do Pedido</label>
+                <input type="text" value={numeroPedido} onChange={e => setNumeroPedido(e.target.value)}
+                  placeholder="Ex: PED-2024-0042" className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Data do Pedido</label>
+                <input type="date" value={dataPedido} onChange={e => setDataPedido(e.target.value)} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Número da Ordem de Compra</label>
+                <input type="text" value={numeroOC} onChange={e => setNumeroOC(e.target.value)}
+                  placeholder="Ex: OC-2024-0099" className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Data da Ordem de Compra</label>
+                <input type="date" value={dataOC} onChange={e => setDataOC(e.target.value)} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Data da Triagem</label>
+                <input type="date" value={dataTriagem} onChange={e => setDataTriagem(e.target.value)} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Data de Vencimento</label>
+                <input type="date" value={dataVencimento} onChange={e => setDataVencimento(e.target.value)} className={inputClass} />
+              </div>
+            </div>
+          </div>
+
+          {/* Forma de Pagamento */}
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-blue-400 mb-3">Forma de Pagamento</h3>
+            <div className="flex gap-3 flex-wrap">
+              {[
+                { value: "", label: "Não definido" },
+                { value: "boleto", label: "Boleto" },
+                { value: "ted", label: "TED" },
+                { value: "avista", label: "À Vista" },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setFormaPagamento(opt.value)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${
+                    formaPagamento === opt.value
+                      ? "bg-blue-600 border-blue-500 text-white"
+                      : "bg-gray-800 border-gray-600 text-gray-300 hover:border-gray-400"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Parcelas (Boleto ou TED) */}
+            {showParcelas && (
+              <div className="mt-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="text-sm text-gray-300">Número de parcelas:</span>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => handleNumParcelasChange(numParcelas - 1)}
+                      className="w-7 h-7 rounded-full bg-gray-700 hover:bg-gray-600 flex items-center justify-center text-white">
+                      <Minus size={14} />
+                    </button>
+                    <span className="w-8 text-center text-white font-bold">{numParcelas}</span>
+                    <button type="button" onClick={() => handleNumParcelasChange(numParcelas + 1)}
+                      className="w-7 h-7 rounded-full bg-gray-700 hover:bg-gray-600 flex items-center justify-center text-white">
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {parcelas.map((p, i) => (
+                    <div key={i} className="flex flex-col gap-1">
+                      <label className="text-xs text-gray-400">Parcela {i + 1}</label>
+                      <input type="date" value={p} onChange={e => handleParcelaChange(i, e.target.value)}
+                        className="bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Observações */}
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-widest text-blue-400 mb-3">Observações</h3>
+            <textarea
+              value={observacoes}
+              onChange={e => setObservacoes(e.target.value)}
+              rows={3}
+              placeholder="Adicione observações sobre esta nota..."
+              className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 resize-none"
+            />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-end gap-3 p-5 border-t border-gray-700 sticky bottom-0 bg-gray-900">
+          <button onClick={onClose}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-gray-700 hover:bg-gray-600 text-white transition-colors">
+            Cancelar
+          </button>
+          <button onClick={handleSave} disabled={updateMutation.isPending}
+            className="px-5 py-2 rounded-lg text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-60">
+            {updateMutation.isPending ? "Salvando..." : "Salvar alterações"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Página principal ─────────────────────────────────────────────────────────
 interface Props { params: { id: string } }
 
 export default function DetalhesNota({ params }: Props) {
   const id = parseInt(params.id, 10);
   const [, navigate] = useLocation();
   const { user } = useAuth();
-  const [editing, setEditing] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   const { data, isLoading, refetch } = trpc.notas.get.useQuery({ id }, { enabled: !isNaN(id) });
   const { data: statusList } = trpc.status.list.useQuery();
@@ -46,36 +309,6 @@ export default function DetalhesNota({ params }: Props) {
   const tipo = data?.tipo;
   const status = data?.status;
 
-  // Form state
-  const [statusId, setStatusId] = useState<number | "">("");
-  const [destinatarioCnpjCpf, setDestinatarioCnpjCpf] = useState("");
-  const [destinatarioNome, setDestinatarioNome] = useState("");
-  const [dataEntradaSaida, setDataEntradaSaida] = useState("");
-  const [observacoes, setObservacoes] = useState("");
-
-  useEffect(() => {
-    if (nota) {
-      setStatusId(nota.statusId ?? "");
-      setDestinatarioCnpjCpf(nota.destinatarioCnpjCpf ?? "");
-      setDestinatarioNome(nota.destinatarioNome ?? "");
-      setDataEntradaSaida(
-        nota.dataEntradaSaida
-          ? new Date(nota.dataEntradaSaida).toISOString().slice(0, 16)
-          : ""
-      );
-      setObservacoes(nota.observacoes ?? "");
-    }
-  }, [nota]);
-
-  const updateMutation = trpc.notas.update.useMutation({
-    onSuccess: () => {
-      toast.success("Nota atualizada com sucesso!");
-      setEditing(false);
-      refetch();
-    },
-    onError: (e) => toast.error(e.message),
-  });
-
   const deleteMutation = trpc.notas.delete.useMutation({
     onSuccess: () => {
       toast.success("Nota excluída com sucesso!");
@@ -84,403 +317,239 @@ export default function DetalhesNota({ params }: Props) {
     onError: (e) => toast.error(e.message),
   });
 
-  const handleSave = () => {
-    updateMutation.mutate({
-      id,
-      statusId: statusId !== "" ? Number(statusId) : undefined,
-      destinatarioCnpjCpf: destinatarioCnpjCpf || undefined,
-      destinatarioNome: destinatarioNome || undefined,
-      dataEntradaSaida: dataEntradaSaida || undefined,
-      observacoes: observacoes || undefined,
-    });
-  };
-
   const handleDelete = () => {
     if (confirm(`Tem certeza que deseja excluir a nota ${nota?.numero}? Esta ação não pode ser desfeita.`)) {
       deleteMutation.mutate({ id });
     }
   };
 
-  if (isNaN(id)) {
-    return (
-      <AppLayout title="Nota não encontrada">
-        <div className="flex flex-col items-center justify-center py-20 gap-4">
-          <FileText className="w-12 h-12" style={{ color: "var(--muted-foreground)" }} />
-          <p style={{ color: "var(--muted-foreground)" }}>ID de nota inválido.</p>
-          <Link href="/notas">
-            <button className="btn-secondary flex items-center gap-2">
-              <ArrowLeft className="w-4 h-4" /> Voltar para Notas
-            </button>
-          </Link>
-        </div>
-      </AppLayout>
-    );
-  }
-
   if (isLoading) {
     return (
-      <AppLayout title="Carregando...">
-        <div className="flex items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: "var(--primary)" }} />
+      <AppLayout>
+        <div className="flex items-center justify-center h-64" style={{ color: "var(--muted-foreground)" }}>
+          Carregando...
         </div>
       </AppLayout>
     );
   }
-
   if (!nota) {
     return (
-      <AppLayout title="Nota não encontrada">
-        <div className="flex flex-col items-center justify-center py-20 gap-4">
-          <FileText className="w-12 h-12" style={{ color: "var(--muted-foreground)" }} />
+      <AppLayout>
+        <div className="flex flex-col items-center justify-center h-64 gap-4">
           <p style={{ color: "var(--muted-foreground)" }}>Nota não encontrada.</p>
-          <Link href="/notas">
-            <button className="btn-secondary flex items-center gap-2">
-              <ArrowLeft className="w-4 h-4" /> Voltar para Notas
-            </button>
-          </Link>
+          <button onClick={() => navigate("/notas")} className="text-blue-400 hover:underline text-sm">
+            Voltar para Notas
+          </button>
         </div>
       </AppLayout>
     );
   }
 
-  const tipoLabel = tipo?.nome ?? tipo?.codigo ?? "—";
-  const statusLabel = status?.nome ?? "Sem status";
-  const statusCor = status?.cor ?? "#94a3b8";
+  const parcelas = nota.parcelas as string[] | null;
+  const statusCor = (status?.cor as string) ?? "#94a3b8";
 
   return (
-    <AppLayout title={`Nota ${nota.numero}`}>
-      {/* Header */}
-      <div className="page-header">
-        <div className="flex items-center gap-3">
-          <Link href="/notas">
-            <button className="p-2 rounded-lg hover:bg-gray-100 transition-colors" title="Voltar">
-              <ArrowLeft className="w-5 h-5" style={{ color: "var(--muted-foreground)" }} />
-            </button>
-          </Link>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold" style={{ color: "var(--foreground)" }}>
-                {tipoLabel} — Nº {nota.numero}
-              </h1>
-              <span
-                className="text-xs px-2 py-0.5 rounded-full font-medium"
-                style={{ backgroundColor: statusCor + "22", color: statusCor, border: `1px solid ${statusCor}44` }}
-              >
-                {statusLabel}
-              </span>
-            </div>
-            <p className="text-sm mt-0.5" style={{ color: "var(--muted-foreground)" }}>
-              Emitida em {fmtData(nota.dataEmissao)} · Origem: {nota.origem === "xml" ? "XML" : "Manual"}
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          {nota.xmlUrl && (
-            <a href={nota.xmlUrl} target="_blank" rel="noopener noreferrer">
-              <button className="btn-secondary flex items-center gap-2 text-sm">
-                <Download className="w-4 h-4" /> Baixar XML
-              </button>
-            </a>
-          )}
-          {canEdit && !editing && (
+    <AppLayout>
+      {/* Modal de edição */}
+      {showEditModal && (
+        <EditModal
+          nota={nota as Record<string, unknown>}
+          statusList={(statusList || []) as Array<{ id: number; nome: string; cor: string }>}
+          notaId={id}
+          onClose={() => setShowEditModal(false)}
+          onSaved={() => refetch()}
+        />
+      )}
+
+      <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+        {/* Cabeçalho */}
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3">
             <button
-              className="btn-primary flex items-center gap-2 text-sm"
-              onClick={() => setEditing(true)}
+              onClick={() => navigate("/notas")}
+              className="p-2 rounded-lg transition-colors"
+              style={{ background: "var(--card)", border: "1px solid var(--border)" }}
             >
-              <Edit3 className="w-4 h-4" /> Editar
+              <ArrowLeft size={18} style={{ color: "var(--muted-foreground)" }} />
             </button>
-          )}
-          {editing && (
-            <>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-xl font-bold" style={{ color: "var(--foreground)" }}>
+                  {(tipo?.nome as string) || "Nota"} — Nº {nota.numero as string}
+                </h1>
+                {status && (
+                  <span
+                    className="px-3 py-0.5 rounded-full text-xs font-semibold"
+                    style={{ backgroundColor: statusCor + "33", color: statusCor, border: `1px solid ${statusCor}55` }}
+                  >
+                    {status.nome as string}
+                  </span>
+                )}
+              </div>
+              <p className="text-sm mt-0.5" style={{ color: "var(--muted-foreground)" }}>
+                Emitida em {fmtData(nota.dataEmissao as Date)} · Origem: {nota.origem === "xml" ? "XML" : "Manual"}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {canEdit && (
               <button
-                className="btn-secondary flex items-center gap-2 text-sm"
-                onClick={() => { setEditing(false); }}
+                onClick={() => setShowEditModal(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
               >
-                <X className="w-4 h-4" /> Cancelar
+                <Edit3 size={14} />
+                Editar
               </button>
-              <button
-                className="btn-primary flex items-center gap-2 text-sm"
-                onClick={handleSave}
-                disabled={updateMutation.isPending}
-              >
-                <Save className="w-4 h-4" />
-                {updateMutation.isPending ? "Salvando..." : "Salvar"}
-              </button>
-            </>
-          )}
+            )}
+          </div>
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
-        {/* Coluna principal */}
-        <div className="lg:col-span-2 flex flex-col gap-4">
+        {/* Grid principal */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* Coluna esquerda (2/3) */}
+          <div className="lg:col-span-2 space-y-4">
 
-          {/* Dados do Emitente */}
-          <div className="card">
-            <div className="card-header">
-              <Building2 className="w-4 h-4" style={{ color: "var(--primary)" }} />
-              <h2 className="font-semibold text-sm" style={{ color: "var(--foreground)" }}>Emitente</h2>
+            {/* Emitente */}
+            <div className="rounded-xl p-5" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
+              <h2 className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: "var(--primary)" }}>Emitente</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Campo label="Razão Social / Nome" value={nota.emitenteNome as string} />
+                <Campo label="CNPJ / CPF" value={fmtCnpj(nota.emitenteCnpj as string)} />
+                <Campo label="UF" value={nota.emitenteUf as string} />
+              </div>
             </div>
-            <div className="card-body grid grid-cols-2 gap-3">
-              <div>
-                <label className="field-label">Razão Social / Nome</label>
-                <p className="field-value">{nota.emitenteNome}</p>
-              </div>
-              <div>
-                <label className="field-label">CNPJ / CPF</label>
-                <p className="field-value mono">{fmtCnpj(nota.emitenteCnpj)}</p>
-              </div>
-              {nota.emitenteUf && (
-                <div>
-                  <label className="field-label">UF</label>
-                  <p className="field-value">{nota.emitenteUf}</p>
+
+            {/* Valores */}
+            <div className="rounded-xl p-5" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
+              <h2 className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: "var(--primary)" }}>Valores</h2>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--muted-foreground)" }}>Valor Total</span>
+                  <span className="text-lg font-bold text-green-500">{fmtMoeda(nota.valorTotal as string)}</span>
                 </div>
-              )}
+                <Campo label="Desconto" value={fmtMoeda(nota.valorDesconto as string)} />
+                <Campo label="Impostos" value={fmtMoeda(nota.valorImpostos as string)} />
+              </div>
             </div>
-          </div>
 
-          {/* Dados do Destinatário */}
-          <div className="card">
-            <div className="card-header">
-              <User className="w-4 h-4" style={{ color: "var(--primary)" }} />
-              <h2 className="font-semibold text-sm" style={{ color: "var(--foreground)" }}>Destinatário</h2>
-              {editing && <span className="text-xs ml-auto" style={{ color: "var(--muted-foreground)" }}>Editável</span>}
-            </div>
-            <div className="card-body grid grid-cols-2 gap-3">
-              <div>
-                <label className="field-label">Razão Social / Nome</label>
-                {editing ? (
-                  <input
-                    className="field-input"
-                    value={destinatarioNome}
-                    onChange={e => setDestinatarioNome(e.target.value)}
-                    placeholder="Nome do destinatário"
-                  />
-                ) : (
-                  <p className="field-value">{nota.destinatarioNome || "—"}</p>
-                )}
-              </div>
-              <div>
-                <label className="field-label">CNPJ / CPF</label>
-                {editing ? (
-                  <input
-                    className="field-input mono"
-                    value={destinatarioCnpjCpf}
-                    onChange={e => setDestinatarioCnpjCpf(e.target.value)}
-                    placeholder="00.000.000/0000-00"
-                  />
-                ) : (
-                  <p className="field-value mono">{fmtCnpj(nota.destinatarioCnpjCpf)}</p>
-                )}
+            {/* Datas */}
+            <div className="rounded-xl p-5" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
+              <h2 className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: "var(--primary)" }}>Datas</h2>
+              <div className="grid grid-cols-2 gap-4">
+                <Campo label="Data de Emissão" value={fmtData(nota.dataEmissao as Date)} />
+                <Campo label="Data de Entrada / Saída" value={fmtData(nota.dataEntradaSaida as Date)} />
+                <Campo label="Criado em" value={fmtData(nota.createdAt as Date)} />
+                <Campo label="Última atualização" value={fmtData(nota.updatedAt as Date)} />
               </div>
             </div>
-          </div>
 
-          {/* Valores */}
-          <div className="card">
-            <div className="card-header">
-              <DollarSign className="w-4 h-4" style={{ color: "var(--primary)" }} />
-              <h2 className="font-semibold text-sm" style={{ color: "var(--foreground)" }}>Valores</h2>
-            </div>
-            <div className="card-body grid grid-cols-3 gap-3">
-              <div>
-                <label className="field-label">Valor Total</label>
-                <p className="field-value font-bold text-base" style={{ color: "var(--primary)" }}>
-                  {fmtMoeda(nota.valorTotal)}
-                </p>
-              </div>
-              <div>
-                <label className="field-label">Desconto</label>
-                <p className="field-value">{fmtMoeda(nota.valorDesconto)}</p>
-              </div>
-              <div>
-                <label className="field-label">Impostos</label>
-                <p className="field-value">{fmtMoeda(nota.valorImpostos)}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Datas */}
-          <div className="card">
-            <div className="card-header">
-              <Calendar className="w-4 h-4" style={{ color: "var(--primary)" }} />
-              <h2 className="font-semibold text-sm" style={{ color: "var(--foreground)" }}>Datas</h2>
-            </div>
-            <div className="card-body grid grid-cols-2 gap-3">
-              <div>
-                <label className="field-label">Data de Emissão</label>
-                <p className="field-value">{fmtData(nota.dataEmissao)}</p>
-              </div>
-              <div>
-                <label className="field-label">Data de Entrada / Saída</label>
-                {editing ? (
-                  <input
-                    type="datetime-local"
-                    className="field-input"
-                    value={dataEntradaSaida}
-                    onChange={e => setDataEntradaSaida(e.target.value)}
-                  />
-                ) : (
-                  <p className="field-value">{fmtData(nota.dataEntradaSaida)}</p>
-                )}
-              </div>
-              <div>
-                <label className="field-label">Criado em</label>
-                <p className="field-value">{fmtData(nota.createdAt)}</p>
-              </div>
-              <div>
-                <label className="field-label">Última atualização</label>
-                <p className="field-value">{fmtData(nota.updatedAt)}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Chave de Acesso */}
-          {nota.chaveAcesso && (
-            <div className="card">
-              <div className="card-header">
-                <FileCheck className="w-4 h-4" style={{ color: "var(--primary)" }} />
-                <h2 className="font-semibold text-sm" style={{ color: "var(--foreground)" }}>Chave de Acesso</h2>
-              </div>
-              <div className="card-body">
-                <p className="mono text-xs break-all" style={{ color: "var(--foreground)" }}>{nota.chaveAcesso}</p>
+            {/* Chave de Acesso */}
+            {nota.chaveAcesso && (
+              <div className="rounded-xl p-5" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
+                <h2 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "var(--primary)" }}>Chave de Acesso</h2>
+                <p className="text-xs font-mono break-all mb-2" style={{ color: "var(--foreground)" }}>{nota.chaveAcesso as string}</p>
                 <a
-                  href={`https://www.nfe.fazenda.gov.br/portal/consultaRecaptcha.aspx?tipoConsulta=completa&nfe=${nota.chaveAcesso}`}
+                  href={`https://www.nfe.fazenda.gov.br/portal/consultaRecaptcha.aspx?tipoConsulta=completa&tipoConteudo=7PhJ+gAVw2g=&nfe=${nota.chaveAcesso}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs mt-2"
-                  style={{ color: "var(--primary)" }}
+                  className="inline-flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-400 transition-colors"
                 >
-                  <ExternalLink className="w-3 h-3" /> Consultar na SEFAZ
+                  <ExternalLink size={12} />
+                  Consultar na SEFAZ
                 </a>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Observações */}
-          <div className="card">
-            <div className="card-header">
-              <Info className="w-4 h-4" style={{ color: "var(--primary)" }} />
-              <h2 className="font-semibold text-sm" style={{ color: "var(--foreground)" }}>Observações</h2>
-              {editing && <span className="text-xs ml-auto" style={{ color: "var(--muted-foreground)" }}>Editável</span>}
-            </div>
-            <div className="card-body">
-              {editing ? (
-                <textarea
-                  className="field-input w-full"
-                  rows={4}
-                  value={observacoes}
-                  onChange={e => setObservacoes(e.target.value)}
-                  placeholder="Observações internas sobre esta nota..."
-                />
-              ) : (
-                <p className="text-sm" style={{ color: nota.observacoes ? "var(--foreground)" : "var(--muted-foreground)" }}>
-                  {nota.observacoes || "Nenhuma observação registrada."}
-                </p>
-              )}
+            {/* Observações */}
+            <div className="rounded-xl p-5" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
+              <h2 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "var(--primary)" }}>Observações</h2>
+              <p className="text-sm" style={{ color: "var(--foreground)" }}>
+                {(nota.observacoes as string) || "Nenhuma observação registrada."}
+              </p>
             </div>
           </div>
-        </div>
 
-        {/* Coluna lateral */}
-        <div className="flex flex-col gap-4">
+          {/* Coluna direita (1/3) */}
+          <div className="space-y-4">
 
-          {/* Status */}
-          <div className="card">
-            <div className="card-header">
-              <Tag className="w-4 h-4" style={{ color: "var(--primary)" }} />
-              <h2 className="font-semibold text-sm" style={{ color: "var(--foreground)" }}>Status</h2>
-              {editing && <span className="text-xs ml-auto" style={{ color: "var(--muted-foreground)" }}>Editável</span>}
+            {/* Identificação */}
+            <div className="rounded-xl p-5" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
+              <h2 className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: "var(--primary)" }}>Identificação</h2>
+              <div className="space-y-3">
+                <Campo label="Tipo" value={tipo?.nome as string} />
+                <Campo label="Número" value={nota.numero as string} />
+                <Campo label="Série" value={nota.serie as string} />
+                <Campo label="ID interno" value={String(nota.id)} />
+              </div>
             </div>
-            <div className="card-body">
-              {editing ? (
-                <select
-                  className="field-input w-full"
-                  value={statusId}
-                  onChange={e => setStatusId(e.target.value === "" ? "" : Number(e.target.value))}
-                >
-                  <option value="">Sem status</option>
-                  {statusList?.map(s => (
-                    <option key={s.id} value={s.id}>{s.nome}</option>
+
+            {/* Gestão */}
+            <div className="rounded-xl p-5" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
+              <h2 className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: "var(--primary)" }}>Gestão</h2>
+              <div className="space-y-3">
+                <Campo label="Nº Contrato" value={nota.numeroContrato as string} />
+                <Campo label="Nº Pedido" value={nota.numeroPedido as string} />
+                <Campo label="Data do Pedido" value={fmtDataCurta(nota.dataPedido as Date)} />
+                <Campo label="Nº Ordem de Compra" value={nota.numeroOC as string} />
+                <Campo label="Data da OC" value={fmtDataCurta(nota.dataOC as Date)} />
+                <Campo label="Data da Triagem" value={fmtDataCurta(nota.dataTriagem as Date)} />
+                <Campo label="Data de Vencimento" value={fmtDataCurta(nota.dataVencimento as Date)} />
+                <Campo label="Forma de Pagamento" value={labelFormaPagamento(nota.formaPagamento as string)} />
+              </div>
+            </div>
+
+            {/* Parcelas */}
+            {parcelas && parcelas.length > 0 && (
+              <div className="rounded-xl p-5" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
+                <h2 className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: "var(--primary)" }}>
+                  Parcelas ({parcelas.length}x)
+                </h2>
+                <div className="space-y-1.5">
+                  {parcelas.map((p, i) => (
+                    <div key={i} className="flex items-center justify-between text-sm">
+                      <span style={{ color: "var(--muted-foreground)" }}>Parcela {i + 1}</span>
+                      <span style={{ color: "var(--foreground)" }}>{fmtDataCurta(p)}</span>
+                    </div>
                   ))}
-                </select>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <span
-                    className="w-3 h-3 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: statusCor }}
-                  />
-                  <span className="text-sm font-medium" style={{ color: "var(--foreground)" }}>{statusLabel}</span>
                 </div>
-              )}
-            </div>
-          </div>
+              </div>
+            )}
 
-          {/* Identificação */}
-          <div className="card">
-            <div className="card-header">
-              <Hash className="w-4 h-4" style={{ color: "var(--primary)" }} />
-              <h2 className="font-semibold text-sm" style={{ color: "var(--foreground)" }}>Identificação</h2>
-            </div>
-            <div className="card-body flex flex-col gap-3">
-              <div>
-                <label className="field-label">Tipo</label>
-                <p className="field-value">{tipoLabel}</p>
-              </div>
-              <div>
-                <label className="field-label">Número</label>
-                <p className="field-value mono">{nota.numero}</p>
-              </div>
-              <div>
-                <label className="field-label">Série</label>
-                <p className="field-value mono">{nota.serie}</p>
-              </div>
-              <div>
-                <label className="field-label">ID interno</label>
-                <p className="field-value mono text-xs">{nota.id}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Arquivo XML */}
-          {(nota.xmlUrl || nota.xmlNomeArquivo) && (
-            <div className="card">
-              <div className="card-header">
-                <FileText className="w-4 h-4" style={{ color: "var(--primary)" }} />
-                <h2 className="font-semibold text-sm" style={{ color: "var(--foreground)" }}>Arquivo XML</h2>
-              </div>
-              <div className="card-body flex flex-col gap-2">
-                {nota.xmlNomeArquivo && (
-                  <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>{nota.xmlNomeArquivo}</p>
-                )}
+            {/* Arquivo XML */}
+            {nota.xmlNomeArquivo && (
+              <div className="rounded-xl p-5" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
+                <h2 className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "var(--primary)" }}>Arquivo XML</h2>
+                <p className="text-sm" style={{ color: "var(--foreground)" }}>{nota.xmlNomeArquivo as string}</p>
                 {nota.xmlUrl && (
-                  <a href={nota.xmlUrl} target="_blank" rel="noopener noreferrer">
-                    <button className="btn-secondary w-full flex items-center justify-center gap-2 text-sm">
-                      <Download className="w-4 h-4" /> Baixar XML
-                    </button>
+                  <a
+                    href={nota.xmlUrl as string}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-400 mt-2 transition-colors"
+                  >
+                    <ExternalLink size={12} />
+                    Baixar XML
                   </a>
                 )}
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Ações perigosas */}
-          {canDelete && (
-            <div className="card border-red-100">
-              <div className="card-header">
-                <h2 className="font-semibold text-sm text-red-600">Zona de Perigo</h2>
-              </div>
-              <div className="card-body">
+            {/* Zona de Perigo */}
+            {canDelete && (
+              <div className="rounded-xl p-5" style={{ background: "var(--card)", border: "1px solid #7f1d1d55" }}>
+                <h2 className="text-xs font-semibold uppercase tracking-widest mb-3 text-red-500">Zona de Perigo</h2>
                 <button
-                  className="w-full text-sm px-3 py-2 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
                   onClick={handleDelete}
                   disabled={deleteMutation.isPending}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-red-700 text-red-500 hover:bg-red-900/20 text-sm font-medium transition-colors disabled:opacity-60"
                 >
+                  <Trash2 size={14} />
                   {deleteMutation.isPending ? "Excluindo..." : "Excluir esta nota"}
                 </button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </AppLayout>

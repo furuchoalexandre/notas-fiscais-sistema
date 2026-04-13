@@ -417,17 +417,39 @@ export const appRouter = router({
     update: requirePermission("canEditNota")
       .input(z.object({
         id: z.number(),
-        statusId: z.number().optional(),
-        observacoes: z.string().optional(),
-        destinatarioCnpjCpf: z.string().optional(),
-        destinatarioNome: z.string().optional(),
-        dataEntradaSaida: z.string().optional(),
+        statusId: z.number().nullable().optional(),
+        observacoes: z.string().nullable().optional(),
+        dataEntradaSaida: z.string().nullable().optional(),
+        // Campos de gestão
+        numeroContrato: z.string().nullable().optional(),
+        numeroPedido: z.string().nullable().optional(),
+        dataPedido: z.string().nullable().optional(),
+        numeroOC: z.string().nullable().optional(),
+        dataOC: z.string().nullable().optional(),
+        dataTriagem: z.string().nullable().optional(),
+        dataVencimento: z.string().nullable().optional(),
+        formaPagamento: z.enum(["boleto", "ted", "avista"]).nullable().optional(),
+        parcelas: z.array(z.string()).nullable().optional(),
       })).mutation(async ({ input }) => {
-        const { id, dataEntradaSaida, ...rest } = input;
+        const {
+          id,
+          dataEntradaSaida,
+          dataPedido,
+          dataOC,
+          dataTriagem,
+          dataVencimento,
+          ...rest
+        } = input;
+        const toDate = (v: string | null | undefined) =>
+          v !== undefined ? (v ? new Date(v) : null) : undefined;
         await updateNota(id, {
           ...rest,
-          ...(dataEntradaSaida ? { dataEntradaSaida: new Date(dataEntradaSaida) } : {}),
-        });
+          ...(dataEntradaSaida !== undefined ? { dataEntradaSaida: toDate(dataEntradaSaida) } : {}),
+          ...(dataPedido !== undefined ? { dataPedido: toDate(dataPedido) } : {}),
+          ...(dataOC !== undefined ? { dataOC: toDate(dataOC) } : {}),
+          ...(dataTriagem !== undefined ? { dataTriagem: toDate(dataTriagem) } : {}),
+          ...(dataVencimento !== undefined ? { dataVencimento: toDate(dataVencimento) } : {}),
+        } as Parameters<typeof updateNota>[1]);
         return { success: true };
       }),
 
