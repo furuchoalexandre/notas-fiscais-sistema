@@ -7,6 +7,7 @@ import Dashboard from "./pages/Dashboard";
 import Notas from "./pages/Notas";
 import ImportarXml from "./pages/ImportarXml";
 import NovaNotaManual from "./pages/NovaNotaManual";
+import DetalhesNota from "./pages/DetalhesNota";
 import GerenciarStatus from "./pages/GerenciarStatus";
 import GerenciarTipos from "./pages/GerenciarTipos";
 import GerenciarUsuarios from "./pages/GerenciarUsuarios";
@@ -24,6 +25,7 @@ function Router() {
       <Route path="/notas" component={Notas} />
       <Route path="/notas/importar" component={ImportarXml} />
       <Route path="/notas/nova" component={NovaNotaManual} />
+      <Route path="/notas/:id" component={DetalhesNota} />
       <Route path="/configuracoes/status" component={GerenciarStatus} />
       <Route path="/configuracoes/tipos" component={GerenciarTipos} />
       <Route path="/configuracoes/usuarios" component={GerenciarUsuarios} />

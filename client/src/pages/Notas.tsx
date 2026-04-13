@@ -2,7 +2,7 @@ import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
 import { Search, FileUp, FilePlus, Trash2, Eye, RefreshCw } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 
@@ -18,6 +18,7 @@ function fmtData(d: Date | null | undefined) {
 
 export default function Notas() {
   const { user } = useAuth();
+  const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [tipoId, setTipoId] = useState<number | undefined>();
   const [statusId, setStatusId] = useState<number | undefined>();
@@ -166,7 +167,7 @@ export default function Notas() {
                 </tr>
               ) : (
                 data.items.map(({ nota, tipo, status }) => (
-                  <tr key={nota.id}>
+                  <tr key={nota.id} className="cursor-pointer" onClick={() => navigate(`/notas/${nota.id}`)}>
                     <td>
                       <div className="mono font-medium" style={{ color: "var(--primary)" }}>{nota.numero}</div>
                       <div className="text-xs" style={{ color: "var(--muted-foreground)" }}>Série {nota.serie}</div>
@@ -208,10 +209,14 @@ export default function Notas() {
                         {nota.origem === "xml" ? "XML" : "Manual"}
                       </span>
                     </td>
-                    <td>
+                    <td onClick={e => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
-                        <button className="p-1.5 rounded hover:bg-gray-100" title="Ver detalhes"
-                          style={{ color: "var(--muted-foreground)" }}>
+                        <button
+                          className="p-1.5 rounded hover:bg-blue-50"
+                          title="Ver detalhes"
+                          style={{ color: "var(--primary)" }}
+                          onClick={() => navigate(`/notas/${nota.id}`)}
+                        >
                           <Eye className="w-4 h-4" />
                         </button>
                         {canDelete && (
