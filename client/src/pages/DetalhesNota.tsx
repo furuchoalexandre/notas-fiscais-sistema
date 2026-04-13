@@ -1,11 +1,11 @@
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import {
-  ArrowLeft, Edit3, ExternalLink, Trash2, X, Plus, Minus
+  ArrowLeft, ExternalLink, Trash2, X, Plus, Minus, Clock, User
 } from "lucide-react";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -295,19 +295,30 @@ export default function DetalhesNota({ params }: Props) {
   const id = parseInt(params.id, 10);
   const [, navigate] = useLocation();
   const { user } = useAuth();
+  // Modal abre automaticamente ao entrar na página
   const [showEditModal, setShowEditModal] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
   const { data, isLoading, refetch } = trpc.notas.get.useQuery({ id }, { enabled: !isNaN(id) });
   const { data: statusList } = trpc.status.list.useQuery();
   const { data: perms } = trpc.auth.myPermissions.useQuery();
+  const { data: historico } = trpc.notas.historico.useQuery({ notaId: id }, { enabled: !isNaN(id) });
+
+  const nota = data?.nota;
+  const tipo = data?.tipo;
+  const status = data?.status;
 
   const isAdmin = user?.role === "admin";
   const canEdit = isAdmin || (perms as Record<string, unknown> | null | undefined)?.canEditNota === true;
   const canDelete = isAdmin || (perms as Record<string, unknown> | null | undefined)?.canDeleteNota === true;
 
-  const nota = data?.nota;
-  const tipo = data?.tipo;
-  const status = data?.status;
+  // Abrir modal automaticamente quando os dados carregarem (apenas uma vez)
+  useEffect(() => {
+    if (nota && canEdit && !dataLoaded) {
+      setDataLoaded(true);
+      setShowEditModal(true);
+    }
+  }, [nota, canEdit, dataLoaded]);
 
   const deleteMutation = trpc.notas.delete.useMutation({
     onSuccess: () => {
@@ -398,7 +409,6 @@ export default function DetalhesNota({ params }: Props) {
                 className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
                 style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
               >
-                <Edit3 size={14} />
                 Editar
               </button>
             )}
@@ -532,6 +542,52 @@ export default function DetalhesNota({ params }: Props) {
                     Baixar XML
                   </a>
                 )}
+              </div>
+            )}
+
+            {/* Histórico de Edições */}
+            {historico && historico.length > 0 && (
+              <div className="rounded-xl p-5" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
+                <h2 className="text-xs font-semibold uppercase tracking-widest mb-4" style={{ color: "var(--primary)" }}>
+                  Histórico de Edições
+                </h2>
+                <div className="space-y-3">
+                  {historico.map((h) => (
+                    <div key={h.id} className="flex gap-3 text-sm">
+                      <div className="flex-shrink-0 mt-0.5">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: "var(--muted)", border: "1px solid var(--border)" }}>
+                          <User size={13} style={{ color: "var(--muted-foreground)" }} />
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold" style={{ color: "var(--foreground)" }}>
+                            {h.userName || "Usuário desconhecido"}
+                          </span>
+                          {h.userEmail && (
+                            <span className="text-xs" style={{ color: "var(--muted-foreground)" }}>({h.userEmail})</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 mt-0.5" style={{ color: "var(--muted-foreground)" }}>
+                          <Clock size={11} />
+                          <span className="text-xs">{new Date(h.createdAt as Date).toLocaleString("pt-BR")}</span>
+                        </div>
+                        {h.camposAlterados && Object.keys(h.camposAlterados as Record<string, unknown>).length > 0 && (
+                          <div className="mt-1.5 space-y-0.5">
+                            {Object.entries(h.camposAlterados as Record<string, { de: unknown; para: unknown }>).map(([campo, val]) => (
+                              <div key={campo} className="text-xs" style={{ color: "var(--muted-foreground)" }}>
+                                <span className="font-medium" style={{ color: "var(--foreground)" }}>{campo}:</span>{" "}
+                                <span className="line-through opacity-60">{String(val.de ?? "—")}</span>
+                                {" "}→{" "}
+                                <span style={{ color: "var(--foreground)" }}>{String(val.para ?? "—")}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
